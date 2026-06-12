@@ -1,8 +1,6 @@
 import { ProtocolDriverBase } from './protocol-driver.base';
-import { Logger } from '@nestjs/common';
 
 export class VisaTcpipDriver extends ProtocolDriverBase {
-  private readonly logger = new Logger(VisaTcpipDriver.name);
   private mockIdentity = '';
 
   constructor(options: { instrumentId: string; host?: string; port?: number; timeoutMs?: number; mockIdentity?: string }) {
@@ -28,14 +26,18 @@ export class VisaTcpipDriver extends ProtocolDriverBase {
       throw new Error(`仪器 ${this.instrumentId} 未连接`);
     }
 
-    this.logger.debug(`[VISA-TCPIP] ${this.instrumentId} << ${data}`);
-    await this.delay(20 + Math.random() * 40);
+    this.logger.debug(`[VISA-TCPIP] ${this.instrumentId} << ${data.trim()}`);
+    const baseDelay = 20 + Math.random() * 30;
+    const variableDelay = Math.random() * 30;
+    await this.delay(baseDelay + variableDelay);
 
     const response = this.handleScpiCommand(data);
-    if (response !== null) {
-      this.logger.debug(`[VISA-TCPIP] ${this.instrumentId} >> ${response}`);
+    if (response !== null && response !== undefined) {
+      const terminatedResponse = response.endsWith('\n') ? response : response + '\n';
+      this.logger.debug(`[VISA-TCPIP] ${this.instrumentId} >> ${response.trim()}`);
+      return terminatedResponse;
     }
-    return response;
+    return null;
   }
 
   async getIdentity(): Promise<string> {

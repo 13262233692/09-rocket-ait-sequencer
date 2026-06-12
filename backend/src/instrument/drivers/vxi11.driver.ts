@@ -1,8 +1,6 @@
 import { ProtocolDriverBase } from './protocol-driver.base';
-import { Logger } from '@nestjs/common';
 
 export class Vxi11Driver extends ProtocolDriverBase {
-  private readonly logger = new Logger(Vxi11Driver.name);
   private simulationData: Map<string, any> = new Map();
   private mockIdentity = '';
 
@@ -39,14 +37,20 @@ export class Vxi11Driver extends ProtocolDriverBase {
       throw new Error(`仪器 ${this.instrumentId} 未连接`);
     }
 
-    this.logger.debug(`[VXI-11] ${this.instrumentId} << ${data}`);
-    await this.delay(10 + Math.random() * 50);
+    this.logger.debug(`[VXI-11] ${this.instrumentId} << ${data.trim()}`);
+    const baseDelay = 10 + Math.random() * 40;
+    const variableDelay = Math.random() * 30;
+    await this.delay(baseDelay + variableDelay);
 
     const response = this.handleScpiCommand(data);
-    if (response !== null) {
-      this.logger.debug(`[VXI-11] ${this.instrumentId} >> ${response}`);
+    
+    if (response !== null && response !== undefined) {
+      const terminatedResponse = response.endsWith('\n') ? response : response + '\n';
+      this.logger.debug(`[VXI-11] ${this.instrumentId} >> ${response.trim()}`);
+      return terminatedResponse;
     }
-    return response;
+    
+    return null;
   }
 
   async getIdentity(): Promise<string> {

@@ -44,19 +44,27 @@ export interface InstrumentState {
 
 export interface ScpiCommand {
   id: string;
-  instrumentId: string;
+  instrumentId?: string;
   command: string;
   expectResponse?: boolean;
   timeoutMs?: number;
   priority?: number;
+  retryCount?: number;
+}
+
+export interface ScpiCommandOptions {
+  timeoutMs?: number;
+  retryCount?: number;
+  validateResponse?: (resp: string) => boolean;
 }
 
 export interface ScpiResponse {
   commandId: string;
   instrumentId: string;
   success: boolean;
-  data?: string;
+  data?: string | null;
   error?: string;
+  requestId?: string;
   timestamp: number;
   executionTimeMs: number;
 }
