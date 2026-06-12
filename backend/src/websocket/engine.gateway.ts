@@ -13,6 +13,8 @@ import { Server, Socket } from 'socket.io';
 import { FlowEngineService, EngineEvent } from '../flow-engine/flow-engine.service';
 import { InstrumentService } from '../instrument/instrument.service';
 import { InstrumentState } from '../common/types/instrument.types';
+import { PyroSafetyService } from '../safety/pyro-safety.service';
+import { PyroEmergencyEvent, PyroSampleData } from '../safety/moving-median-filter';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -27,10 +29,12 @@ export class EngineGateway
   private readonly logger = new Logger(EngineGateway.name);
   private eventSubscription: any;
   private instrumentTimer: NodeJS.Timeout;
+  private pyroUnsubscribers: Array<() => void> = [];
 
   constructor(
     private readonly flowEngineService: FlowEngineService,
     private readonly instrumentService: InstrumentService,
+    private readonly pyroSafetyService: PyroSafetyService,
   ) {}
 
   afterInit() {
@@ -48,12 +52,40 @@ export class EngineGateway
     this.instrumentTimer = setInterval(() => {
       this.broadcastInstruments();
     }, 5000);
+
+    const unsubEmergency = this.pyroSafetyService.onEmergency(
+      (event: PyroEmergencyEvent) => {
+        this.logger.fatal(
+          `[WebSocket] 🚨 广播火工品紧急关断警报: ${event.reason}`,
+        );
+        this.server.emit('pyro_emergency', event);
+      },
+    );
+    this.pyroUnsubscribers.push(unsubEmergency);
+
+    const unsubSample = this.pyroSafetyService.onSample(
+      (data: PyroSampleData & { sessionId: string }) => {
+        this.server.emit('pyro_sample', data);
+      },
+    );
+    this.pyroUnsubscribers.push(unsubSample);
+
+    const unsubEvent = this.pyroSafetyService.onPyroEvent((event: any) => {
+      this.server.emit('pyro_event', event);
+    });
+    this.pyroUnsubscribers.push(unsubEvent);
   }
 
   handleConnection(client: Socket) {
     this.logger.log(`[WebSocket] 客户端已连接: ${client.id}`);
     client.emit('connected', { serverTime: Date.now() });
     this.broadcastInstruments();
+
+    if (this.pyroSafetyService.isEmergencyActive()) {
+      client.emit('pyro_emergency_active', {
+        active: true,
+      });
+    }
   }
 
   handleDisconnect(client: Socket) {

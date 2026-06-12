@@ -17,6 +17,8 @@ export enum NodeType {
   BRANCH = 'branch',
   START = 'start',
   END = 'end',
+  PYRO_RESISTANCE_TEST = 'pyro_resistance_test',
+  PYRO_SAFETY_STOP = 'pyro_safety_stop',
 }
 
 export enum NodeExecutionStatus {
@@ -50,6 +52,16 @@ export interface FlowNodeConfig {
   expectResponse?: boolean;
   loopCount?: number;
   branchCondition?: string;
+  pyroId?: string;
+  nominalResistance?: number;
+  safeCurrentMa?: number;
+  testVoltageV?: number;
+  breakdownThresholdRatio?: number;
+  safeResistanceMinOhms?: number;
+  testDurationMs?: number;
+  filterWindowSize?: number;
+  sampleIntervalMs?: number;
+  sourceInstrumentId?: string;
 }
 
 export interface FlowNodeData {
@@ -276,6 +288,35 @@ export const nodeTypeDefinitions: NodeTypeDefinition[] = [
     color: '#13C2C2',
     description: '输出自定义日志消息',
     defaultConfig: { message: '' },
+  },
+  {
+    type: NodeType.PYRO_RESISTANCE_TEST,
+    label: '火工品阻值测量',
+    category: '火工品安全',
+    icon: 'WarningFilled',
+    color: '#FF4500',
+    description: '毫秒级监控火工品阻值，防爆阻断保护',
+    defaultConfig: {
+      pyroId: 'PYRO-001',
+      sourceInstrumentId: 'ps-001',
+      nominalResistance: 2.0,
+      safeCurrentMa: 1.0,
+      testVoltageV: 0.05,
+      breakdownThresholdRatio: 0.3,
+      safeResistanceMinOhms: 0.5,
+      testDurationMs: 3000,
+      filterWindowSize: 5,
+      sampleIntervalMs: 10,
+    },
+  },
+  {
+    type: NodeType.PYRO_SAFETY_STOP,
+    label: '火工品安全复位',
+    category: '火工品安全',
+    icon: 'SwitchButton',
+    color: '#FF6347',
+    description: '停止所有火工品测试并重置紧急状态',
+    defaultConfig: {},
   },
 ];
 

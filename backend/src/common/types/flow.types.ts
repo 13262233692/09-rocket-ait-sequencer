@@ -6,6 +6,8 @@ export enum NodeType {
   READ_VOLTAGE = 'read_voltage',
   READ_CURRENT = 'read_current',
   READ_IMPEDANCE = 'read_impedance',
+  PYRO_RESISTANCE_TEST = 'pyro_resistance_test',
+  PYRO_SAFETY_STOP = 'pyro_safety_stop',
   DELAY = 'delay',
   RELAY_CLOSE = 'relay_close',
   RELAY_OPEN = 'relay_open',
@@ -50,6 +52,13 @@ export interface FlowNodeConfig {
   expectResponse?: boolean;
   loopCount?: number;
   branchCondition?: string;
+  pyroId?: string;
+  pyroName?: string;
+  nominalResistance?: number;
+  safeCurrentMa?: number;
+  testVoltageV?: number;
+  testDurationMs?: number;
+  breakdownThresholdRatio?: number;
 }
 
 export interface FlowNode {

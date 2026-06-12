@@ -33,6 +33,11 @@ export const useAppStore = defineStore('app', () => {
   const engineEvents = ref<EngineEvent[]>([]);
   const isExecuting = ref(false);
 
+  const pyroEmergencyActive = ref(false);
+  const pyroEmergencyEvent = ref<any>(null);
+  const pyroSamples = ref<any[]>([]);
+  const pyroAlertAcknowledged = ref(false);
+
   const activeNodeIds = computed(() => {
     if (!executionState.value) return new Set<string>();
     const ids = new Set<string>();
@@ -86,6 +91,39 @@ export const useAppStore = defineStore('app', () => {
 
     socket.value.on('error', (err: any) => {
       console.error('[WebSocket] 错误:', err);
+    });
+
+    socket.value.on('pyro_emergency', (event: any) => {
+      console.error('[WebSocket] 🚨 收到火工品紧急关断警报:', event);
+      pyroEmergencyActive.value = true;
+      pyroEmergencyEvent.value = event;
+      pyroAlertAcknowledged.value = false;
+      if (executionState.value) {
+        executionState.value.status = 'failed';
+        executionState.value.error = `火工品紧急关断: ${event.reason}`;
+        isExecuting.value = false;
+      }
+    });
+
+    socket.value.on('pyro_emergency_active', (data: any) => {
+      if (data.active) {
+        pyroEmergencyActive.value = true;
+      }
+    });
+
+    socket.value.on('pyro_sample', (data: any) => {
+      pyroSamples.value.push(data);
+      if (pyroSamples.value.length > 100) {
+        pyroSamples.value = pyroSamples.value.slice(-100);
+      }
+    });
+
+    socket.value.on('pyro_event', (event: any) => {
+      engineEvents.value.push({
+        type: 'pyro_event',
+        message: `[火工品] ${event.eventType}: ${event.message}`,
+        timestamp: event.timestamp,
+      });
     });
   }
 
@@ -236,6 +274,22 @@ export const useAppStore = defineStore('app', () => {
     selectedEdgeId.value = null;
   }
 
+  async function acknowledgePyroAlert() {
+    pyroAlertAcknowledged.value = true;
+    try {
+      await axios.post('/api/pyro-safety/emergency/reset');
+    } catch (err) {
+      console.error('重置紧急状态失败:', err);
+    }
+  }
+
+  function resetPyroEmergency() {
+    pyroEmergencyActive.value = false;
+    pyroEmergencyEvent.value = null;
+    pyroSamples.value = [];
+    pyroAlertAcknowledged.value = false;
+  }
+
   return {
     instruments,
     socket,
@@ -246,6 +300,10 @@ export const useAppStore = defineStore('app', () => {
     executionState,
     engineEvents,
     isExecuting,
+    pyroEmergencyActive,
+    pyroEmergencyEvent,
+    pyroSamples,
+    pyroAlertAcknowledged,
     activeNodeIds,
     passedEdges,
     getNodeStatus,
@@ -262,5 +320,7 @@ export const useAppStore = defineStore('app', () => {
     selectNode,
     selectEdge,
     clearSelection,
+    acknowledgePyroAlert,
+    resetPyroEmergency,
   };
 });

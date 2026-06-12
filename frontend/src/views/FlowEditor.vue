@@ -134,6 +134,8 @@
         <el-empty v-if="store.engineEvents.length === 0" description="暂无执行日志" :image-size="60" />
       </div>
     </div>
+
+    <PyroEmergencyAlert />
   </div>
 </template>
 
@@ -153,6 +155,7 @@ import { useAppStore } from '../stores/app';
 import NodePalette from '../components/NodePalette.vue';
 import PropertiesPanel from '../components/PropertiesPanel.vue';
 import CustomNode from '../components/CustomNode.vue';
+import PyroEmergencyAlert from '../components/PyroEmergencyAlert.vue';
 import {
   FlowNode, FlowEdge, FlowGraph, NodeType,
   NodeExecutionStatus as Status, nodeTypeDefinitions,
@@ -464,6 +467,7 @@ function eventLabel(type: string): string {
     node_completed: '节点完成',
     node_failed: '节点失败',
     edge_active: '连线激活',
+    pyro_event: '火工品事件',
   };
   return map[type] || type;
 }
@@ -473,6 +477,7 @@ function eventTagType(type: string): string {
   if (type.includes('failed')) return 'danger';
   if (type.includes('started')) return 'warning';
   if (type.includes('stopped')) return 'info';
+  if (type === 'pyro_event') return 'danger';
   return '';
 }
 

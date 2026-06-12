@@ -8,12 +8,18 @@ import {
   JudgeResult,
 } from '../common/types/flow.types';
 import { InstrumentService } from '../instrument/instrument.service';
+import { PyroSafetyService } from '../safety/pyro-safety.service';
+import { PyroTestConfig, PyroTestSession } from '../safety/pyro-safety.service';
 
 @Injectable()
 export class NodeExecutorService {
   private readonly logger = new Logger(NodeExecutorService.name);
+  private activePyroSessions = new Map<string, PyroTestSession>();
 
-  constructor(private readonly instrumentService: InstrumentService) {}
+  constructor(
+    private readonly instrumentService: InstrumentService,
+    private readonly pyroSafetyService: PyroSafetyService,
+  ) {}
 
   async execute(
     node: FlowNode,
@@ -105,6 +111,12 @@ export class NodeExecutorService {
 
       case NodeType.BRANCH:
         return this.executeBranch(config, variables);
+
+      case NodeType.PYRO_RESISTANCE_TEST:
+        return this.executePyroResistanceTest(config, variables, node.id);
+
+      case NodeType.PYRO_SAFETY_STOP:
+        return this.executePyroSafetyStop(config, variables, node.id);
 
       case NodeType.LOOP_START:
       case NodeType.LOOP_END:
@@ -294,5 +306,151 @@ export class NodeExecutorService {
     variables: Map<string, any>,
   ): { passed: boolean; message: string } {
     return { passed: true, message: `分支条件: ${config.branchCondition || 'default'}` };
+  }
+
+  private async executePyroResistanceTest(
+    config: FlowNodeConfig,
+    variables: Map<string, any>,
+    nodeId: string,
+  ): Promise<{ passed: boolean; message: string; measurements?: Record<string, number> }> {
+    const pyroId = config.pyroId || `pyro-${nodeId}`;
+    const sourceInstrumentId = config.instrumentId;
+    const nominalResistance = config.nominalResistance || 2.0;
+    const safeCurrentMa = config.safeCurrentMa || 5;
+    const testVoltageV = config.testVoltageV || 0.01;
+    const testDurationMs = config.testDurationMs || 3000;
+    const breakdownThresholdRatio = config.breakdownThresholdRatio || 0.3;
+
+    if (!sourceInstrumentId) {
+      throw new Error('火工品测试必须指定源表仪器ID');
+    }
+
+    this.logger.warn(
+      `🔥 [火工品测试] 节点=${nodeId} 火工品=${pyroId} 开始电阻测试 (安全电流=${safeCurrentMa}mA, 测试电压=${testVoltageV}V, 名义电阻=${nominalResistance}Ω)`,
+    );
+
+    const pyroConfig: PyroTestConfig = {
+      pyroId,
+      pyroName: config.pyroName || `火工品-${pyroId}`,
+      sourceInstrumentId,
+      nominalResistance,
+      safeCurrentMa,
+      testVoltageV,
+      breakdownThresholdRatio,
+      sampleRateMs: 10,
+      filterWindowSize: 5,
+      criticalDropSamples: 3,
+    };
+
+    const session = this.pyroSafetyService.createSession(pyroConfig);
+    this.activePyroSessions.set(nodeId, session);
+
+    variables.set(`pyro_session_${nodeId}`, session.sessionId);
+
+    await this.pyroSafetyService.startSession(session.sessionId);
+
+    this.logger.warn(
+      `🔥 [火工品测试] 节点=${nodeId} 安全监控已启动，正在采样监控 ${testDurationMs}ms...`,
+    );
+
+    const startTime = Date.now();
+    const checkInterval = setInterval(() => {
+      const current = this.pyroSafetyService.getSession(session.sessionId);
+      if (current && current.status === 'emergency_stopped') {
+        clearInterval(checkInterval);
+      }
+    }, 50);
+
+    await new Promise<void>((resolve) => {
+      const durationCheck = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const currentSession = this.pyroSafetyService.getSession(session.sessionId);
+
+        if (currentSession?.status === 'emergency_stopped') {
+          clearInterval(durationCheck);
+          clearInterval(checkInterval);
+          resolve();
+          return;
+        }
+
+        if (elapsed >= testDurationMs) {
+          clearInterval(durationCheck);
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 10);
+    });
+
+    const finalSession = this.pyroSafetyService.getSession(session.sessionId);
+
+    if (finalSession?.status === 'emergency_stopped') {
+      const errorMsg =
+        finalSession.emergencyEvent?.reason || '火工品触发紧急关断';
+      this.logger.fatal(
+        `🔥 [火工品测试] 节点=${nodeId} 紧急关断! 原因: ${errorMsg}`,
+      );
+      return {
+        passed: false,
+        message: `火工品测试紧急终止: ${errorMsg}`,
+        measurements: {
+          pyro_resistance:
+            finalSession.monitorStatus?.latestResistance ?? 0,
+          pyro_emergency: 1,
+        },
+      };
+    }
+
+    await this.pyroSafetyService.stopSession(session.sessionId, true);
+    this.activePyroSessions.delete(nodeId);
+
+    const latestResistance =
+      finalSession?.monitorStatus?.latestResistance ?? nominalResistance;
+    const sampleCount = finalSession?.monitorStatus?.sampleCount ?? 0;
+
+    variables.set(`last_pyro_resistance_${pyroId}`, latestResistance);
+
+    this.logger.log(
+      `🔥 [火工品测试] 节点=${nodeId} 测试通过! 电阻=${latestResistance.toFixed(4)}Ω, 采样数=${sampleCount}`,
+    );
+
+    return {
+      passed: true,
+      message: `火工品电阻测试通过: ${latestResistance.toFixed(4)} Ω (采样 ${sampleCount} 次)`,
+      measurements: {
+        pyro_resistance: latestResistance,
+        pyro_sample_count: sampleCount,
+      },
+    };
+  }
+
+  private async executePyroSafetyStop(
+    config: FlowNodeConfig,
+    variables: Map<string, any>,
+    nodeId: string,
+  ): Promise<{ passed: boolean; message: string }> {
+    let stoppedCount = 0;
+
+    for (const [activeNodeId, session] of this.activePyroSessions.entries()) {
+      try {
+        await this.pyroSafetyService.stopSession(session.sessionId, true);
+        stoppedCount++;
+        this.logger.warn(
+          `🔥 [火工品测试] 节点=${nodeId} 主动停止会话: ${session.sessionId.slice(0, 8)}`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `🔥 [火工品测试] 节点=${nodeId} 停止会话失败: ${error}`,
+        );
+      }
+    }
+
+    this.activePyroSessions.clear();
+
+    this.pyroSafetyService.resetEmergencyState();
+
+    return {
+      passed: true,
+      message: `已安全停止 ${stoppedCount} 个火工品测试会话，紧急状态已重置`,
+    };
   }
 }
