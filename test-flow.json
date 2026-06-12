@@ -1,0 +1,64 @@
+{
+  "id": "test-flow-001",
+  "name": "箭体通电测试流程",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "start",
+      "label": "开始",
+      "position": { "x": 300, "y": 50 },
+      "config": {}
+    },
+    {
+      "id": "n2",
+      "type": "power_on",
+      "label": "主电源开启",
+      "position": { "x": 260, "y": 150 },
+      "config": { "instrumentId": "ps-001" }
+    },
+    {
+      "id": "n3",
+      "type": "set_voltage",
+      "label": "设置母线电压 28V",
+      "position": { "x": 240, "y": 250 },
+      "config": { "instrumentId": "ps-001", "voltage": 28.0 }
+    },
+    {
+      "id": "n4",
+      "type": "delay",
+      "label": "等待500ms",
+      "position": { "x": 270, "y": 350 },
+      "config": { "delayMs": 500 }
+    },
+    {
+      "id": "n5",
+      "type": "read_voltage",
+      "label": "读取母线电压",
+      "position": { "x": 250, "y": 450 },
+      "config": { "instrumentId": "ps-001" }
+    },
+    {
+      "id": "n6",
+      "type": "judge",
+      "label": "电压合格判定",
+      "position": { "x": 260, "y": 550 },
+      "config": { "minValue": 26.5, "maxValue": 29.5 }
+    },
+    {
+      "id": "n7",
+      "type": "end",
+      "label": "结束",
+      "position": { "x": 300, "y": 650 },
+      "config": {}
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "n1", "target": "n2" },
+    { "id": "e2", "source": "n2", "target": "n3" },
+    { "id": "e3", "source": "n3", "target": "n4" },
+    { "id": "e4", "source": "n4", "target": "n5" },
+    { "id": "e5", "source": "n5", "target": "n6" },
+    { "id": "e6", "source": "n6", "target": "n7" }
+  ],
+  "description": "测试箭体通电-稳压-读压-判定完整流程"
+}
